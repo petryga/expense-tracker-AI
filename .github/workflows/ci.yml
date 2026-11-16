@@ -15,6 +15,6 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: ruff format --check .
       - run: ruff check .
-      - run: mypy app tests
+      - run: mypy app eval tests
       # Unit tests only: no API key and no real statement data in CI.
       - run: pytest -q

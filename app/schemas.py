@@ -19,6 +19,8 @@ class CategorizeRow(_Camel):
     # The statement text as the bank printed it.
     text: Annotated[str, StringConstraints(min_length=1, max_length=512)]
     amount_cents: int
+    # The bank's own category for the row (e.g. "Restaurant-Restaurant"), if sent.
+    bank_category: Annotated[str, StringConstraints(max_length=100)] | None = None
 
 
 class CategorizeRequest(_Camel):
