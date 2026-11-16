@@ -14,6 +14,12 @@ from app.schemas import CategorizeRow, Suggestion
 
 log = logging.getLogger("ai")
 
+# Rows per model call. A whole month (~200 rows) in one answer can run past
+# the output limit and lose everything; 40 rows stay well inside it, and a
+# failed call then costs only its own rows. The eval used one month per call
+# (about 12 rows), so its results hold.
+CHUNK_ROWS = 40
+
 
 @dataclass
 class Report:
@@ -69,6 +75,17 @@ def categorize_with_report(
     if not rows or not categories or settings.ai_backend == "none":
         return _none(rows), report
 
+    suggestions: list[Suggestion] = []
+    for start in range(0, len(rows), CHUNK_ROWS):
+        chunk = rows[start : start + CHUNK_ROWS]
+        suggestions += _ask_chunk(chunk, categories, settings, report)
+    return suggestions, report
+
+
+def _ask_chunk(
+    rows: list[CategorizeRow], categories: list[str], settings: Settings, report: Report
+) -> list[Suggestion]:
+    """One model call. A failed call costs only its own rows."""
     started = time.perf_counter()
     report.calls += 1
     try:
@@ -85,18 +102,18 @@ def categorize_with_report(
             answer, tokens = ollama.ask(
                 settings.ollama_url, settings.ai_model, rows, categories, settings.ai_timeout_s
             )
-    except (
-        Exception
-    ) as error:  # Timeout, connection, HTTP or bad JSON: no suggestions (decision 11).
+    except Exception as error:  # Timeout, connection, HTTP, cut-off or bad JSON (decision 11).
         report.failed_calls += 1
         report.errors.append(type(error).__name__)
-        log.warning("categorize failed: %s", type(error).__name__)
-        return _none(rows), report
+        # The model's stop reason is safe to log; other errors may quote content.
+        detail = f" ({error})" if isinstance(error, claude.ModelStopped) else ""
+        log.warning("categorize failed: %s%s", type(error).__name__, detail)
+        return _none(rows)
     finally:
         report.seconds += time.perf_counter() - started
     report.input_tokens += tokens["input_tokens"]
     report.output_tokens += tokens["output_tokens"]
-    return _read_answers(answer, rows, categories, report), report
+    return _read_answers(answer, rows, categories, report)
 
 
 def categorize(rows: list[CategorizeRow], categories: list[str]) -> list[Suggestion]:

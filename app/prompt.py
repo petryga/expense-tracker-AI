@@ -15,7 +15,7 @@ For each row, answer with exactly one of the user's categories, or null.
 
 Answer null when the row does not say what was bought: general marketplaces and stores that
 sell many unrelated kinds of things (for example eBay, AliExpress or Alipay, Shein, Walmart,
-Etsy, Temu) give no clue about the item. A wrong category costs the user more than a blank
+Etsy, Temu, Vinted) give no clue about the item. A wrong category costs the user more than a blank
 one, so answer null whenever you would be guessing."""
 
 

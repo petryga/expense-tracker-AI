@@ -113,3 +113,30 @@ def test_never_suggested_categories_are_not_offered_to_the_model(
     # Even if a model answered it anyway, it is dropped.
     assert suggestions[0].category is None
     assert report.invalid_answers == 1
+
+
+def test_large_requests_go_in_chunks_and_a_failed_chunk_costs_only_its_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [CategorizeRow(id=str(i), text="GREENLEAF MARKET", amount_cents=100) for i in range(90)]
+    calls: list[int] = []
+
+    def ask(_url: str, _model: str, chunk: list[CategorizeRow], *_: Any) -> Any:
+        calls.append(len(chunk))
+        if len(calls) == 2:
+            raise TimeoutError("slow")
+        return {"answers": [{"id": r.id, "category": "Groceries"} for r in chunk]}, {
+            "input_tokens": 1,
+            "output_tokens": 1,
+        }
+
+    monkeypatch.setattr(ollama, "ask", ask)
+    suggestions, report = categorizer.categorize_with_report(rows, CATEGORIES, ON)
+    assert calls == [40, 40, 10]
+    assert (report.calls, report.failed_calls) == (3, 1)
+    got = [s.category for s in suggestions]
+    assert (
+        got[:40] == ["Groceries"] * 40
+        and got[40:80] == [None] * 40
+        and got[80:] == ["Groceries"] * 10
+    )

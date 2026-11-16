@@ -2,6 +2,8 @@
 
 from datetime import date
 
+import pytest
+
 from eval.guessing import guess
 from eval.merchant import merchant_key
 from eval.records import CANT_TELL, Charge, Expense
@@ -126,3 +128,21 @@ def test_marketplaces_start_as_cant_tell_and_nothing_else_is_guessed() -> None:
 def test_merchant_key_drops_wallet_and_processor_prefixes() -> None:
     assert merchant_key("AplPay FD *STATE PERMITS 7SPRINGFIELD IL") == "STATE PERMITS"
     assert merchant_key("SQ *BEAN THERE CAFE") == "BEAN THERE"
+
+
+@pytest.mark.parametrize(
+    ("description", "key"),
+    [
+        ("AplPay FD *STATE PERMITS 7SPRINGFIELD IL", "STATE PERMITS"),
+        ("SQ *BEAN THERE CAFE", "BEAN THERE"),
+        ("BEANTHERECOFFEECOSPRINGFIELD IL", "BEANTHERECOFFEECOSPRINGFIELD IL"),
+        ("GREENLEAF MARKET 12", "GREENLEAF MARKET"),
+        ("AplPay GREENLEAF MARKET SPRINGFIELD", "GREENLEAF MARKET"),
+        ("TST* LITTLE DINER 0042", "LITTLE DINER"),
+        ("12345", ""),
+    ],
+)
+def test_merchant_key_matches_the_backend_memory_key(description: str, key: str) -> None:
+    # The same cases as BE/utils/statementParsers/memoryKey.test.ts: merchant
+    # memory in the app must use the rule the eval measured.
+    assert merchant_key(description) == key

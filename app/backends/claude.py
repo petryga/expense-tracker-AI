@@ -10,6 +10,10 @@ from app.prompt import SYSTEM, answer_schema, user_message
 from app.schemas import CategorizeRow
 
 
+class ModelStopped(ValueError):
+    """The model ended without a usable answer (refusal, or cut off at max_tokens)."""
+
+
 def ask(
     api_key: str,
     model: str,
@@ -37,7 +41,7 @@ def ask(
     )
     if response.stop_reason != "end_turn":
         # A refusal or a cut-off answer is not something to read suggestions from.
-        raise ValueError(f"stop_reason={response.stop_reason}")
+        raise ModelStopped(f"stop_reason={response.stop_reason}")
     # Thinking blocks can come first; the answer is the text block.
     text = next(block.text for block in response.content if block.type == "text")
     tokens = {
