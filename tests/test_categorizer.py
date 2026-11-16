@@ -101,20 +101,6 @@ def test_memory_then_model_asks_the_model_only_about_unknown_merchants() -> None
     assert asked == ["NEW SHOP"]
 
 
-def test_never_suggested_categories_are_not_offered_to_the_model(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = fake_model(monkeypatch, {"answers": [{"id": "a", "category": "Gifts"}]})
-    suggestions, report = categorizer.categorize_with_report(
-        ROWS, [*CATEGORIES, "Gifts"], Settings(ai_backend="ollama", ai_never_suggest=["Gifts"])
-    )
-    offered = calls[0][3]
-    assert "Gifts" not in offered and offered == CATEGORIES
-    # Even if a model answered it anyway, it is dropped.
-    assert suggestions[0].category is None
-    assert report.invalid_answers == 1
-
-
 def test_large_requests_go_in_chunks_and_a_failed_chunk_costs_only_its_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

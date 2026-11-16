@@ -9,6 +9,24 @@ from app.main import app
 SECRET = "test-secret"
 
 
+@pytest.fixture(autouse=True)
+def ignore_local_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never read the developer's AI/.env (a real backend, key or
+    secret there must not change what a test does), nor AI_* variables from
+    the shell."""
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+    get_settings.cache_clear()
+    for name in (
+        "AI_BACKEND",
+        "AI_MODEL",
+        "AI_SHARED_SECRET",
+        "ANTHROPIC_API_KEY",
+        "AI_NEVER_SUGGEST",
+        "AI_EFFORT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     app.dependency_overrides[get_settings] = lambda: Settings(ai_shared_secret=SECRET)

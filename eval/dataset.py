@@ -46,24 +46,14 @@ class Split:
     month: str
     history: list[LabelledRow]
     test: list[LabelledRow]
-    # Test rows left out because their label can't be known from the row.
-    excluded: int = 0
 
 
-def monthly_splits(
-    rows: list[LabelledRow], first_test_month: str, never_suggest: frozenset[str] = frozenset()
-) -> Iterator[Split]:
+def monthly_splits(rows: list[LabelledRow], first_test_month: str) -> Iterator[Split]:
     """One split per month from first_test_month on. History is strictly
-    earlier months, so nothing from a test month ever informs its own answers.
-
-    Rows labelled with a never-suggested category ("Gifts") are left out of
-    both: no predictor may produce that label, and one gift says nothing about
-    what a shop usually is."""
-    knowable = [r for r in rows if r.label not in never_suggest]
+    earlier months, so nothing from a test month ever informs its own answers."""
     for month in sorted({r.month for r in rows if r.month >= first_test_month}):
         yield Split(
             month=month,
-            history=[r for r in knowable if r.month < month],
-            test=[r for r in knowable if r.month == month],
-            excluded=sum(1 for r in rows if r.month == month and r.label in never_suggest),
+            history=[r for r in rows if r.month < month],
+            test=[r for r in rows if r.month == month],
         )

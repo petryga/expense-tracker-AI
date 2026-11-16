@@ -26,10 +26,6 @@ class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
     # Short, so a slow model never holds an import up for long (decision 11).
     ai_timeout_s: float = 120.0
-    # Categories that depend on why you bought something, not on what the
-    # statement says ("Gifts"): never suggested; you choose them on review.
-    # In .env: AI_NEVER_SUGGEST='["Gifts"]'
-    ai_never_suggest: list[str] = ["Gifts"]
 
     # Eval only: the card's account name in the app (see eval/prepare_labels.py).
     eval_card_account: str = ""

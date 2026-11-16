@@ -4,14 +4,14 @@ A small FastAPI service that suggests a category for each card-statement row. Th
 
 **One rule:** LLM work happens here, money stays in `BE/`. This service does no money math, has no user auth, and never decides anything on its own. `BE/` validates every answer and a person confirms every row.
 
-> Status: skeleton. `POST /categorize` answers "no suggestion" for every row; the model and the eval come next (see `PLANS.md`, Plan 3, Phase B).
+> Status: working. Backends: `none` (default, no suggestions), `ollama` (a local model) and `claude` (Claude Haiku 5.5 by default), chosen with `AI_BACKEND`. Eval results below.
 
 ## API
 
 | | |
 |---|---|
 | `GET /health` | `{ "status": "ok" }`, no auth |
-| `POST /categorize` | `{ rows: [{ id, text, amountCents }], categories: [name] }` → `{ suggestions: [{ id, category \| null, source }] }`. `source` is `model` or `none`. |
+| `POST /categorize` | `{ rows: [{ id, text, amountCents, bankCategory? }], categories: [name] }` → `{ suggestions: [{ id, category \| null, source }] }`. `source` is `model` or `none`. |
 
 - Requires the `X-AI-Secret` header to match `AI_SHARED_SECRET`. With the secret unset, every request is refused (503), so a misconfigured deploy fails closed.
 - `X-Request-Id` from `BE/` is kept and echoed back, and goes in the log line, so one import can be traced across both services.
@@ -69,7 +69,18 @@ Merchant memory uses `eval/merchant.py` to normalize merchants (prefixes and sto
 
 ### Results
 
-Labelled set: 206 non-Amazon card charges, January 2025 to November 2026. Test months 2025-08 on: 143 rows with a category, 45 can't tell. 7 rows labelled Gifts are left out of scoring and of the history the baselines learn from: whether something was a gift isn't on the statement, so the service never suggests it (`AI_NEVER_SUGGEST`).
+**Current (2026-11-15):** 206 non-Amazon card charges, January 2025 to November 2026. Test months 2025-08 on: 150 rows with a category, 45 can't tell. Every row is scored: the gift labels were relabelled with each item's real category once gifts became a checkbox in the app.
+
+| Predictor | Accuracy | Precision | Held back on can't tell |
+|---|---|---|---|
+| Merchant memory | 44.0% (66/150) | 95.7% (66/69) | 100% (45/45) |
+| Bank's category → your category | 51.3% (77/150) | 70.0% (77/110) | 75.6% (34/45) |
+| Memory, then bank-category mapping | 60.0% (90/150) | 78.3% (90/115) | 88.9% (40/45) |
+| **Memory, then Claude Haiku 5.5** | **76.0% (114/150)** | **91.2% (114/125)** | **97.8% (44/45)** |
+
+Memory then Haiku: 15 calls, 41 s, $0.0058, 0 failed calls, 0 invalid answers. The tables below are earlier runs, kept for the model and effort comparisons; each was measured on the label set of its day (143 rows with 7 gift rows left out), so compare within a table, not across.
+
+**Earlier, 143 rows (gift rows left out):**
 
 | Predictor | Accuracy | Precision | Held back on can't tell |
 |---|---|---|---|
@@ -107,7 +118,7 @@ The model has to beat the memory-then-bank-category row: memory then Haiku does,
 
 Local model run (2026-11-15, Apple Silicon laptop, 48 GB): `hf.co/JonathanColetti/Qwen3.8-27B-Uncensored-GGUF:Q5_K_M`, temperature 0, answers constrained to the category list or null by JSON schema. One call per test month: 0 failed calls, 0 invalid answers. Model alone: 16 calls, 20k tokens in / 8k out, 18 min. After memory: 15 calls, 12k in / 4k out, 9 min. No cost; nothing left the machine. It is a community fine-tune, not a mainstream release, so treat it as a first data point; Claude (decision 10) is still to run.
 
-Main kinds of misses (memory then model, 43 rows): purchases whose category depends on why they were bought, which the statement can't show (the reason Gifts is now never suggested); foreign merchants whose names are transliterated and say little; a resale marketplace missing from the prompt's list of "can't tell" shops; a shop labelled two ways in history, so memory picked the other; and near-neighbour categories confused (e.g. Beauty vs Wellness & Spa).
+Main kinds of misses (memory then model, 43 rows): purchases whose category depends on why they were bought, which the statement can't show (the reason a gift is now a checkbox you tick, not a category); foreign merchants whose names are transliterated and say little; a resale marketplace missing from the prompt's list of "can't tell" shops; a shop labelled two ways in history, so memory picked the other; and near-neighbour categories confused (e.g. Beauty vs Wellness & Spa).
 
 The model has to beat the memory-then-bank-category row: memory then Haiku does, by 17.5 points, with higher precision and no guesses on can't-tell rows. Labels were pre-filled from hand-entered expenses and then confirmed by hand, never by a model.
 

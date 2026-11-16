@@ -3,12 +3,13 @@ import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, Response
 
 from app.auth import require_shared_secret
-from app.categorizer import categorize
-from app.config import get_settings
+from app.categorizer import categorize_with_report
+from app.config import Settings, get_settings
 from app.schemas import CategorizeRequest, CategorizeResponse
 
 logging.basicConfig(
@@ -51,5 +52,10 @@ def health() -> dict[str, str]:
 
 
 @app.post("/categorize", dependencies=[Depends(require_shared_secret)])
-def categorize_rows(body: CategorizeRequest) -> CategorizeResponse:
-    return CategorizeResponse(suggestions=categorize(body.rows, body.categories))
+def categorize_rows(
+    body: CategorizeRequest, settings: Annotated[Settings, Depends(get_settings)]
+) -> CategorizeResponse:
+    # Settings come through the dependency, like the secret check, so one
+    # configuration governs the whole request (and tests can replace it).
+    suggestions, _ = categorize_with_report(body.rows, body.categories, settings)
+    return CategorizeResponse(suggestions=suggestions)

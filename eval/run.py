@@ -58,15 +58,15 @@ def cost(model: str, input_tokens: int, output_tokens: int) -> float:
     return (input_tokens * price_in + output_tokens * price_out) / 1_000_000
 
 
-def estimate(model: str, never_suggest: frozenset[str]) -> str:
+def estimate(model: str) -> str:
     """Before any paid call: prompt size from the real prompts (about 3.5
     characters a token), and about 60 output tokens a row including thinking.
     Both predictors together; memory+model asks about fewer rows."""
     with (ROOT / "data" / "labels.csv").open(newline="") as f:
         rows = load_labels(f)
-    names = [c for c in categories() if c not in never_suggest]
+    names = categories()
     chars = n_rows = 0
-    for split in monthly_splits(rows, FIRST_TEST_MONTH, never_suggest):
+    for split in monthly_splits(rows, FIRST_TEST_MONTH):
         chars += len(SYSTEM) + len(user_message(to_categorize_rows(split.test), names))
         n_rows += len(split.test)
     tokens_in = int(chars / 3.5 * 2)  # two predictors, upper bound
@@ -97,13 +97,11 @@ def add_model(
     return reports
 
 
-def run(names: list[str], never_suggest: frozenset[str]) -> tuple[dict[str, Score], int]:
+def run(names: list[str]) -> dict[str, Score]:
     with (ROOT / "data" / "labels.csv").open(newline="") as f:
         rows = load_labels(f)
     totals = {name: Score() for name in names}
-    excluded = 0
-    for split in monthly_splits(rows, FIRST_TEST_MONTH, never_suggest):
-        excluded += split.excluded
+    for split in monthly_splits(rows, FIRST_TEST_MONTH):
         for name in names:
             predictions = PREDICTORS[name](split.history, split.test)
             totals[name].merge(
@@ -113,7 +111,7 @@ def run(names: list[str], never_suggest: frozenset[str]) -> tuple[dict[str, Scor
                     predictions,
                 )
             )
-    return totals, excluded
+    return totals
 
 
 def main() -> None:
@@ -131,10 +129,9 @@ def main() -> None:
 
     reports: dict[str, Report] = {}
     names = args.predictors or list(PREDICTORS)
-    never = frozenset(Settings().ai_never_suggest)
     model_name = args.claude or args.ollama
     if args.claude:
-        print(estimate(args.claude, never))
+        print(estimate(args.claude))
         if not args.yes and input("Run it? [y/N] ").strip().lower() != "y":
             return
         reports = add_model("claude", args.claude, effort=args.effort)
@@ -146,12 +143,11 @@ def main() -> None:
     if not args.predictors:  # nothing named: run the model ones too
         names = [*names, *(n for n in reports if n not in names)]
 
-    totals, excluded = run(names, never)
+    totals = run(names)
     any_score = next(iter(totals.values()))
     print(
         f"Test months {FIRST_TEST_MONTH} on: {any_score.category_rows} rows with a category, "
-        f"{any_score.cant_tell_rows} can't-tell rows; {excluded} left out "
-        f"(labelled {', '.join(sorted(never))}, which no predictor may suggest)\n"
+        f"{any_score.cant_tell_rows} can't-tell rows\n"
     )
     header = ("predictor", "accuracy", "precision", "held back on can't tell")
     print(f"{header[0]:<12} {header[1]:<18} {header[2]:<18} {header[3]}")

@@ -83,18 +83,3 @@ def test_score_counts_right_wrong_no_suggestion_and_can_t_tell() -> None:
     assert (s.cant_tell_rows, s.held_back, s.guessed) == (2, 1, 1)
     assert (round(s.accuracy, 3), s.precision, s.held_back_rate) == (0.333, 0.5, 0.5)
     assert [m[0] for m in s.misses] == ["b", "c", "e"]
-
-
-def test_never_suggested_labels_are_left_out_of_history_and_scoring() -> None:
-    rows = [
-        row("2025-07", "CORNER PHARMACY", "Pharmacy"),
-        row("2025-07", "CORNER PHARMACY", "Gifts", ref="gift-old"),
-        row("2025-08", "CORNER PHARMACY", "Gifts", ref="gift-new"),
-        row("2025-08", "CORNER PHARMACY", "Pharmacy", ref="test"),
-    ]
-    (split,) = monthly_splits(rows, "2025-08", frozenset({"Gifts"}))
-    assert [r.label for r in split.history] == ["Pharmacy"]
-    assert [r.reference for r in split.test] == ["test"]
-    assert split.excluded == 1
-    # Memory learns the shop's usual category, not the one-off gift.
-    assert merchant_memory(split.history, split.test) == ["Pharmacy"]

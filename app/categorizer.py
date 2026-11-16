@@ -1,7 +1,7 @@
 """Suggests a category per statement row.
 
-The endpoint and the eval runner both call `categorize`, so what the eval
-measures is exactly what the app serves.
+The endpoint and the eval runner both call `categorize_with_report`, so what
+the eval measures is exactly what the app serves.
 """
 
 import logging
@@ -70,8 +70,6 @@ def categorize_with_report(
 ) -> tuple[list[Suggestion], Report]:
     settings = settings or get_settings()
     report = Report()
-    never = set(settings.ai_never_suggest)
-    categories = [c for c in categories if c not in never]
     if not rows or not categories or settings.ai_backend == "none":
         return _none(rows), report
 
@@ -114,7 +112,3 @@ def _ask_chunk(
     report.input_tokens += tokens["input_tokens"]
     report.output_tokens += tokens["output_tokens"]
     return _read_answers(answer, rows, categories, report)
-
-
-def categorize(rows: list[CategorizeRow], categories: list[str]) -> list[Suggestion]:
-    return categorize_with_report(rows, categories)[0]
