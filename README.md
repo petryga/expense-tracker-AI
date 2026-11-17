@@ -214,3 +214,7 @@ categories, which a product name alone can't tell the model.
 ## Data
 
 `data/` and `results/` are gitignored. Real statements, the labelled eval set and eval outputs live there and are never committed.
+
+## License
+
+All rights reserved. Published for portfolio review; not licensed for reuse.
