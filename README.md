@@ -28,7 +28,25 @@ A small FastAPI service that suggests a category for each card-statement row. Th
 - **Guardrails:** at most 6 model calls and 60 s per question, then a fixed message. A cut-off, refused or empty reply, or an API error, becomes "unavailable" rather than a half answer. Questions outside the data get "I can't answer that from your data."
 - **The prompt** keeps CAD and USD apart, requires every number to come from a tool result, asks for plain text, and forbids claiming checks that weren't made for the current question. (An early version said it had "re-checked" figures it never looked at; earlier turns carry only text, not the tools behind them.)
 - **Logs** hold the outcome, tool names, call count, tokens and time; never the question or the answer.
-- Measured on invented data with Haiku 5.5: 1–4 s and about $0.004 a question.
+- Measured on invented data with Haiku 5.5: 1–4 s and about $0.0005 a question (about 4,000 tokens in, 250 out, over 1–3 model calls).
+
+### Assistant eval
+
+```bash
+.venv/bin/python -m eval.assistant --claude claude-haiku-5-5 --runs 3
+```
+
+12 questions with known answers, on invented data (`eval/assistant_data.py`) served by a small fake API (`eval/fake_api.py`). The real agent loop and the real MCP server (`../MCP/dist/index.js`, built) do the work. The correct figures are computed from the same rows the fake API serves. Grading is automatic and strict: every expected number must appear, at least one word from each word group, and no forbidden number (for example CAD and USD added together, or another month's total borrowed for a month with no data).
+
+The questions cover a relative date ("last month"), top category, a two-month comparison, a three-month series, counting, recurring totals, the biggest single purchase, a budget check, CAD-only spending, an off-topic question (must refuse with the fixed phrase), a write request (must point to the app, never claim it added anything) and a month with no data.
+
+| Run (2026-11-17, Haiku 5.5) | Passed | Model calls | Cost |
+|---|---|---|---|
+| 1 | 12/12 | 23 | $0.0061 |
+| 2 | 12/12 | 23 | $0.0062 |
+| 3 | 12/12 | 23 | $0.0062 |
+
+As first graded, runs 1 and 2 scored 11/12: the budget answer said "No, you weren't over… 16.65 USD against a budget of 30", which is right, but the grader's word list lacked "weren't over". The word list was widened and the saved answers re-graded; no answer changed. Each question used the same tools in all three runs. One thing the eval surfaced about the app itself: category budgets have no currency, and the assistant said so rather than assume one. (Left as it is: budgets are in the one currency the owner now uses.)
 
 Needs `AI_BACKEND=claude`, the MCP server built (`npm run build` in `MCP/`) and `node` on the PATH. Settings: `MCP_SERVER_COMMAND`, `MCP_SERVER_ARGS`, `EXPENSE_TRACKER_API_URL`, `AI_AGENT_MODEL` (see `.env.example`). `BE/` exposes it as `POST /assistant`.
 
