@@ -1,18 +1,23 @@
 import logging
 import re
+import shlex
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 
+from app.agent.loop import Model, Turn, answer_question
+from app.agent.mcp_tools import mcp_toolbox
 from app.auth import require_shared_secret
 from app.categorizer import categorize_with_report
 from app.config import Settings, get_settings
 from app.examples_store import StoredExample, sync
 from app.retrieval import default_embedder, examples_for
 from app.schemas import (
+    AskRequest,
+    AskResponse,
     CategorizeRequest,
     CategorizeResponse,
     SyncExamplesRequest,
@@ -90,3 +95,55 @@ def sync_examples(
     return SyncExamplesResponse(
         stored=result.stored, embedded=result.embedded, removed=result.removed
     )
+
+
+def _model(settings: Settings) -> Model:
+    """The Anthropic Messages API (a seam for tests)."""
+    import anthropic
+
+    client = anthropic.Anthropic(
+        api_key=settings.anthropic_api_key, timeout=settings.ai_timeout_s, max_retries=2
+    )
+    # Messages.create is overloaded (streaming or not); the loop uses the plain form.
+    return cast(Model, client.messages)
+
+
+@app.post("/ask", dependencies=[Depends(require_shared_secret)])
+async def ask(
+    body: AskRequest, settings: Annotated[Settings, Depends(get_settings)]
+) -> AskResponse:
+    """The spending assistant: answers a question about the user's own data
+    by calling the read-only tools of the Expense Tracker MCP server."""
+    if settings.ai_backend != "claude" or not settings.anthropic_api_key:
+        raise HTTPException(status_code=503, detail="the assistant is not configured")
+    model_name = settings.ai_agent_model or settings.ai_model or "claude-haiku-5-5"
+    history = [Turn(t.role, t.text) for t in body.history]
+    try:
+        async with mcp_toolbox(
+            settings.mcp_server_command,
+            shlex.split(settings.mcp_server_args),
+            settings.expense_tracker_api_url,
+            body.user_token,
+        ) as toolbox:
+            result = await answer_question(
+                body.question,
+                history,
+                toolbox,
+                _model(settings),
+                model_name,
+            )
+    except Exception as error:
+        # The MCP server could not start or broke off. Type only: no content in logs.
+        log.warning("assistant unavailable: %s", type(error).__name__)
+        raise HTTPException(status_code=503, detail="the assistant is unavailable") from None
+    # Counts and timing only; never the question or the answer.
+    log.info(
+        "ask outcome=%s tools=%s model_calls=%d tokens_in=%d tokens_out=%d %.1fs",
+        result.outcome,
+        ",".join(result.tool_calls) or "-",
+        result.model_calls,
+        result.input_tokens,
+        result.output_tokens,
+        result.seconds,
+    )
+    return AskResponse(answer=result.answer, outcome=result.outcome, tool_calls=result.tool_calls)

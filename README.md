@@ -12,12 +12,25 @@ A small FastAPI service that suggests a category for each card-statement row. Th
 |---|---|
 | `GET /health` | `{ "status": "ok" }`, no auth |
 | `POST /categorize` | `{ rows: [{ id, text, amountCents, bankCategory?, kind? }], categories: [name], userId? }` → `{ suggestions: [{ id, category \| null, source }] }`. `source` is `model` or `none`. A row with `kind: "item"` is an order item (the text is a product name) and is shown that user's past choices for similar products. |
+| `POST /ask` | `{ question, history?: [{ role, text }], userToken? }` → `{ answer, outcome, toolCalls }`. The spending assistant; see below. `outcome` is `answered`, or why it stopped: `max_steps`, `timeout`, `model_error`. |
 | `PUT /examples` | `{ userId?, examples: [{ source, text, category }] }`: every past item choice of the user. The stored set is made to match; only new or reworded ones are embedded. → `{ stored, embedded, removed }` |
 
 - Requires the `X-AI-Secret` header to match `AI_SHARED_SECRET`. With the secret unset, every request is refused (503), so a misconfigured deploy fails closed.
 - `X-Request-Id` from `BE/` is kept and echoed back, and goes in the log line, so one import can be traced across both services.
 - Logs one line per request: method, path, status, duration, request id. Never bodies: they hold statement descriptions and amounts.
 - At most 500 rows and 300 categories per call; unknown fields are rejected. The service asks the model in chunks of 40 rows, so a long statement can't run past the model's output limit, and one failed chunk costs only its own rows.
+
+## Spending assistant
+
+`POST /ask` answers a question about the user's own spending. It is a tool-calling loop (`app/agent/`): Claude gets the question, the earlier turns and the read-only tools of the Expense Tracker MCP server (the `MCP/` repo), asks for tool calls, gets their results, and answers.
+
+- **Tools come from the MCP server**, started as a subprocess over stdio for each question with the asking user's token, so it can read only that user's data. Only tools the server marks read-only are offered; a call to anything else is refused here.
+- **Guardrails:** at most 6 model calls and 60 s per question, then a fixed message. A cut-off, refused or empty reply, or an API error, becomes "unavailable" rather than a half answer. Questions outside the data get "I can't answer that from your data."
+- **The prompt** keeps CAD and USD apart, requires every number to come from a tool result, asks for plain text, and forbids claiming checks that weren't made for the current question. (An early version said it had "re-checked" figures it never looked at; earlier turns carry only text, not the tools behind them.)
+- **Logs** hold the outcome, tool names, call count, tokens and time; never the question or the answer.
+- Measured on invented data with Haiku 5.5: 1–4 s and about $0.004 a question.
+
+Needs `AI_BACKEND=claude`, the MCP server built (`npm run build` in `MCP/`) and `node` on the PATH. Settings: `MCP_SERVER_COMMAND`, `MCP_SERVER_ARGS`, `EXPENSE_TRACKER_API_URL`, `AI_AGENT_MODEL` (see `.env.example`). `BE/` exposes it as `POST /assistant`.
 
 ## Retrieval of past choices
 

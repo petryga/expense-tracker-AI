@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     # How many past choices an order item is shown. 0 turns retrieval off.
     ai_examples_k: int = 3
 
+    # The spending assistant (POST /ask). It runs the MCP server (the MCP/ repo)
+    # as a subprocess, which calls the Expense Tracker API as the asking user.
+    mcp_server_command: str = "node"
+    mcp_server_args: str = "../MCP/dist/index.js"
+    expense_tracker_api_url: str = "http://localhost:3000"
+    # Model for the assistant; empty means the categorization model (ai_model).
+    ai_agent_model: str = ""
+
     # Eval only: the card's account name in the app (see eval/prepare_labels.py).
     eval_card_account: str = ""
 

@@ -68,3 +68,23 @@ class SyncExamplesResponse(_Camel):
     stored: int
     embedded: int
     removed: int
+
+
+class ChatTurn(_Camel):
+    role: Literal["user", "assistant"]
+    text: Annotated[str, StringConstraints(min_length=1, max_length=4000)]
+
+
+class AskRequest(_Camel):
+    question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+    # Earlier turns of this conversation, oldest first.
+    history: Annotated[list[ChatTurn], Field(max_length=20)] = []
+    # The asking user's access token, passed on to the API. None: local, auth off.
+    user_token: Annotated[str, StringConstraints(max_length=4096)] | None = None
+
+
+class AskResponse(_Camel):
+    answer: str
+    # "answered", or why it stopped: "max_steps", "timeout", "model_error".
+    outcome: str
+    tool_calls: list[str]

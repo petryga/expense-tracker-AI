@@ -25,6 +25,10 @@ def ignore_local_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "AI_EFFORT",
         "AI_DATABASE_URL",
         "AI_EXAMPLES_K",
+        "MCP_SERVER_COMMAND",
+        "MCP_SERVER_ARGS",
+        "EXPENSE_TRACKER_API_URL",
+        "AI_AGENT_MODEL",
     ):
         monkeypatch.delenv(name, raising=False)
 

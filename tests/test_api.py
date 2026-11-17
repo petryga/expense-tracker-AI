@@ -161,3 +161,87 @@ def test_examples_sync_stores_the_set_and_hides_store_errors(
         assert "Hose" not in failed.text
     finally:
         app.dependency_overrides.clear()
+
+
+def test_ask_needs_the_secret_and_a_configured_model(client: TestClient) -> None:
+    body = {"question": "How much on coffee in October?"}
+    assert client.post("/ask", json=body).status_code == 401
+    assert client.post("/ask", json=body, headers={"X-AI-Secret": "test-secret"}).status_code == 503
+
+
+def test_ask_answers_and_never_logs_the_question(
+    auth: dict[str, str], monkeypatch: Any, caplog: Any
+) -> None:
+    from contextlib import asynccontextmanager
+
+    from app import main
+    from app.agent.loop import AgentResult
+
+    seen: dict[str, Any] = {}
+
+    @asynccontextmanager
+    async def toolbox(command: str, args: list[str], api_url: str, token: str | None) -> Any:
+        seen.update(command=command, args=args, api_url=api_url, token=token)
+        yield object()
+
+    async def answer(question: str, history: Any, tools: Any, model: Any, name: str) -> Any:
+        seen.update(question=question, history=history, model=name)
+        return AgentResult(
+            answer="US$11.15 at Bean There Cafe.",
+            outcome="answered",
+            tool_calls=["spending_report"],
+        )
+
+    monkeypatch.setattr(main, "mcp_toolbox", toolbox)
+    monkeypatch.setattr(main, "answer_question", answer)
+    monkeypatch.setattr(main, "_model", lambda settings: object())
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        ai_shared_secret="test-secret", ai_backend="claude", anthropic_api_key="k"
+    )
+    try:
+        with caplog.at_level("INFO", logger="ai"):
+            res = TestClient(app).post(
+                "/ask",
+                json={
+                    "question": "Coffee at Bean There Cafe in October?",
+                    "history": [{"role": "user", "text": "Hi"}],
+                    "userToken": "tok-1",
+                },
+                headers=auth,
+            )
+    finally:
+        app.dependency_overrides.clear()
+    assert res.status_code == 200
+    assert res.json() == {
+        "answer": "US$11.15 at Bean There Cafe.",
+        "outcome": "answered",
+        "toolCalls": ["spending_report"],
+    }
+    assert seen["token"] == "tok-1"
+    assert seen["args"] == ["../MCP/dist/index.js"]
+    assert seen["model"] == "claude-haiku-5-5"
+    assert "Bean There" not in caplog.text
+    assert "outcome=answered" in caplog.text
+
+
+def test_ask_is_unavailable_when_the_mcp_server_fails(
+    auth: dict[str, str], monkeypatch: Any
+) -> None:
+    from contextlib import asynccontextmanager
+
+    from app import main
+
+    @asynccontextmanager
+    async def broken(*_args: Any) -> Any:
+        raise FileNotFoundError("node")
+        yield
+
+    monkeypatch.setattr(main, "mcp_toolbox", broken)
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        ai_shared_secret="test-secret", ai_backend="claude", anthropic_api_key="k"
+    )
+    try:
+        res = TestClient(app).post("/ask", json={"question": "Coffee?"}, headers=auth)
+    finally:
+        app.dependency_overrides.clear()
+    assert res.status_code == 503
