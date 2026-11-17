@@ -7,7 +7,7 @@ import pytest
 from app import categorizer
 from app.backends import ollama
 from app.config import Settings
-from app.prompt import answer_schema, user_message
+from app.prompt import Example, answer_schema, user_message
 from app.schemas import CategorizeRow
 from eval.dataset import LabelledRow
 from eval.model_predictors import memory_then_model
@@ -126,3 +126,32 @@ def test_large_requests_go_in_chunks_and_a_failed_chunk_costs_only_its_rows(
         and got[40:80] == [None] * 40
         and got[80:] == ["Groceries"] * 10
     )
+
+
+def test_rows_with_past_choices_are_asked_apart_from_the_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], Any]] = []
+
+    def ask(
+        _url: str, _model: str, rows: list[CategorizeRow], _c: Any, _t: Any, examples: Any
+    ) -> tuple[Any, dict[str, int]]:
+        calls.append(([r.id for r in rows], examples))
+        answers = [{"id": r.id, "category": "Groceries"} for r in rows]
+        return {"answers": answers}, {"input_tokens": 1, "output_tokens": 1}
+
+    monkeypatch.setattr(ollama, "ask", ask)
+    rows = [
+        CategorizeRow(id="i1", text="Test Garden Hose", amount_cents=100, kind="item"),
+        CategorizeRow(id="r1", text="GREENLEAF MARKET", amount_cents=200),
+        CategorizeRow(id="i2", text="Test Hose Reel", amount_cents=300, kind="item"),
+    ]
+    examples = {"i1": [Example("Test Hose Nozzle", "Groceries")], "i2": []}
+    suggestions, report = categorizer.categorize_with_report(
+        rows, ["Groceries"], Settings(ai_backend="ollama", ai_model="m"), examples
+    )
+    # The statement row and the item with nothing to show go first, with no
+    # examples at all; the answers come back in the order asked.
+    assert calls == [(["r1", "i2"], None), (["i1"], examples)]
+    assert [s.id for s in suggestions] == ["i1", "r1", "i2"]
+    assert report.calls == 2

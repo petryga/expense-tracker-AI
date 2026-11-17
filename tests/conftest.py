@@ -23,6 +23,8 @@ def ignore_local_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "ANTHROPIC_API_KEY",
         "AI_NEVER_SUGGEST",
         "AI_EFFORT",
+        "AI_DATABASE_URL",
+        "AI_EXAMPLES_K",
     ):
         monkeypatch.delenv(name, raising=False)
 

@@ -11,12 +11,34 @@ A small FastAPI service that suggests a category for each card-statement row. Th
 | | |
 |---|---|
 | `GET /health` | `{ "status": "ok" }`, no auth |
-| `POST /categorize` | `{ rows: [{ id, text, amountCents, bankCategory? }], categories: [name] }` → `{ suggestions: [{ id, category \| null, source }] }`. `source` is `model` or `none`. |
+| `POST /categorize` | `{ rows: [{ id, text, amountCents, bankCategory?, kind? }], categories: [name], userId? }` → `{ suggestions: [{ id, category \| null, source }] }`. `source` is `model` or `none`. A row with `kind: "item"` is an order item (the text is a product name) and is shown that user's past choices for similar products. |
+| `PUT /examples` | `{ userId?, examples: [{ source, text, category }] }`: every past item choice of the user. The stored set is made to match; only new or reworded ones are embedded. → `{ stored, embedded, removed }` |
 
 - Requires the `X-AI-Secret` header to match `AI_SHARED_SECRET`. With the secret unset, every request is refused (503), so a misconfigured deploy fails closed.
 - `X-Request-Id` from `BE/` is kept and echoed back, and goes in the log line, so one import can be traced across both services.
 - Logs one line per request: method, path, status, duration, request id. Never bodies: they hold statement descriptions and amounts.
 - At most 500 rows and 300 categories per call; unknown fields are rejected. The service asks the model in chunks of 40 rows, so a long statement can't run past the model's output limit, and one failed chunk costs only its own rows.
+
+## Retrieval of past choices
+
+An order item's product name rarely says how its owner files it (is a notebook Education or a hobby?). So before asking the model, the service looks up the user's most similar past items and shows them next to the row. On labelled items this beat both no examples and random examples (see "Order items" under Results).
+
+- **Embeddings** come from a small local model (`BAAI/bge-small-en-v1.5` through `fastembed`), so product names are not sent to a second provider and there is no second key.
+- **Storage** is one Postgres table with pgvector, `category_examples`, created by a `BE/` migration. This service is the only reader and writer, through a role that can use that table and nothing else. Lookup is an exact nearest-neighbour scan filtered by user: a user has a few thousand rows at most.
+- **The table is an index, not a source of truth.** `BE/` sends the user's full current set (`PUT /examples`) before it asks about items, so a category edited or an expense deleted in the app is reflected without separate calls.
+- **Only order items get examples.** Statement rows are asked in a separate model call with exactly the prompt they had before; repeat merchants are already covered by merchant memory in `BE/`.
+- **It is optional.** With no `AI_DATABASE_URL`, no table, or no embedding model installed, rows are categorized without examples.
+
+Setup, once (the role has no access to anything else):
+
+```sql
+CREATE ROLE expense_tracker_ai LOGIN;  -- add a password anywhere but a local trust setup
+GRANT CONNECT ON DATABASE expense_tracker TO expense_tracker_ai;
+GRANT USAGE ON SCHEMA public TO expense_tracker_ai;
+GRANT SELECT, INSERT, UPDATE, DELETE ON category_examples TO expense_tracker_ai;
+```
+
+Then `pip install -e '.[embeddings]'` and set `AI_DATABASE_URL` in `.env` (see `.env.example`).
 
 ## Running locally
 
@@ -33,7 +55,7 @@ cp .env.example .env   # then set AI_SHARED_SECRET (same value as BE/.env)
 .venv/bin/ruff format --check . && .venv/bin/ruff check . && .venv/bin/mypy app eval tests && .venv/bin/pytest -q
 ```
 
-CI runs the same. Tests use synthetic rows only.
+CI runs the same. Tests use synthetic rows only. The examples-store tests need a Postgres with pgvector: set `AI_TEST_DATABASE_URL` to a throwaway database (CI has one); they are skipped without it.
 
 ## Labelling the eval set
 
@@ -65,7 +87,7 @@ Every month from August 2025 on is a test month, answered using only the months 
 - **precision**: right over all suggestions made on those rows
 - **held back**: share of can't-tell rows with no suggestion
 
-Merchant memory uses `eval/merchant.py` to normalize merchants (prefixes and store numbers stripped, first two words). It is reimplemented here for the eval; when it moves into `BE/`, it must use the same rule.
+Merchant memory uses `eval/merchant.py` to normalize merchants (prefixes and store numbers stripped, first two words). It is reimplemented here for the eval; `BE/` uses the same rule in the app, and a test there checks the two agree.
 
 ### Results
 
@@ -78,7 +100,7 @@ Merchant memory uses `eval/merchant.py` to normalize merchants (prefixes and sto
 | Memory, then bank-category mapping | 60.0% (90/150) | 78.3% (90/115) | 88.9% (40/45) |
 | **Memory, then Claude Haiku 5.5** | **76.0% (114/150)** | **91.2% (114/125)** | **97.8% (44/45)** |
 
-Memory then Haiku: 15 calls, 41 s, $0.0058, 0 failed calls, 0 invalid answers. The tables below are earlier runs, kept for the model and effort comparisons; each was measured on the label set of its day (143 rows with 7 gift rows left out), so compare within a table, not across.
+Memory then Haiku: 15 calls, 41 s, $0.0058, 0 failed calls, 0 invalid answers. It beats the best rules-only row (memory, then bank-category mapping) by 16 points, with higher precision and fewer guesses on can't-tell rows. On 150 rows a single run is good to roughly plus or minus 7 points. The tables below are earlier runs, kept for the model and effort comparisons; each was measured on the label set of its day (143 rows with 7 gift rows left out), so compare within a table, not across.
 
 **Earlier, 143 rows (gift rows left out):**
 
@@ -113,14 +135,38 @@ The model has to beat the memory-then-bank-category row: memory then Haiku does,
 | Predictor | Accuracy | Precision | Held back on can't tell |
 |---|---|---|---|
 | Memory, then bank-category mapping | 56.7% (85/150) | 73.9% (85/115) | 88.9% (40/45) |
-| Local model alone (Qwen 27B fine-tune, Ollama) | 64.0% (96/150) | 69.1% (96/139) | 71.1% (32/45) |
+| Local model alone (27B open-weights model, Ollama) | 64.0% (96/150) | 69.1% (96/139) | 71.1% (32/45) |
 | Memory, then local model | 71.3% (107/150) | 74.8% (107/143) | 93.3% (42/45) |
 
-Local model run (2026-11-15, Apple Silicon laptop, 48 GB): `hf.co/JonathanColetti/Qwen3.8-27B-Uncensored-GGUF:Q5_K_M`, temperature 0, answers constrained to the category list or null by JSON schema. One call per test month: 0 failed calls, 0 invalid answers. Model alone: 16 calls, 20k tokens in / 8k out, 18 min. After memory: 15 calls, 12k in / 4k out, 9 min. No cost; nothing left the machine. It is a community fine-tune, not a mainstream release, so treat it as a first data point; Claude (decision 10) is still to run.
+Local model run (2026-11-15, Apple Silicon laptop, 48 GB): a quantized 27B open-weights model served by Ollama, temperature 0, answers constrained to the category list or null by JSON schema. One call per test month: 0 failed calls, 0 invalid answers. Model alone: 16 calls, 20k tokens in / 8k out, 18 min. After memory: 15 calls, 12k in / 4k out, 9 min. No cost; nothing left the machine. It was the first data point, before the Claude runs above.
 
 Main kinds of misses (memory then model, 43 rows): purchases whose category depends on why they were bought, which the statement can't show (the reason a gift is now a checkbox you tick, not a category); foreign merchants whose names are transliterated and say little; a resale marketplace missing from the prompt's list of "can't tell" shops; a shop labelled two ways in history, so memory picked the other; and near-neighbour categories confused (e.g. Beauty vs Wellness & Spa).
 
-The model has to beat the memory-then-bank-category row: memory then Haiku does, by 17.5 points, with higher precision and no guesses on can't-tell rows. Labels were pre-filled from hand-entered expenses and then confirmed by hand, never by a model.
+### Order items, and whether showing past choices helps
+
+`python -m eval.items --claude MODEL --examples 3` scores the category suggested for an
+order item from its product name alone, in three arms: no examples, 3 random past
+choices, and 3 past choices retrieved by similarity (a small local embedding model,
+`pip install -e '.[embeddings]'`; nothing leaves the machine for that step).
+
+An item is only shown items from earlier months, and each month is asked in its own
+call. Asking everything at once leaks answers: an item's label appears in the same
+prompt as another item's past choice. A first version did that, and random examples
+scored 91%.
+
+80 labelled items, Haiku 5.5 at low effort, three runs each (items right out of 80):
+
+| Arm | Run 1 | Run 2 | Run 3 | Mean |
+|---|---|---|---|---|
+| Always the most common category | 19 | 19 | 19 | 23.8% |
+| No examples | 59 | 54 | 57 | 70.8% |
+| 3 random past choices | 61 | 61 | 59 | 75.4% |
+| 3 retrieved past choices | 67 | 64 | 67 | 82.5% |
+
+Retrieved examples won in every run, by about 12 points over no examples and 7 over
+random ones. The set is small, so treat that as a direction and a rough size, not a
+precise figure. Most of the gain is the owner's own conventions between near
+categories, which a product name alone can't tell the model.
 
 ## Data
 

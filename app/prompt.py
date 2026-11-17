@@ -1,8 +1,25 @@
 """The categorization prompt, shared by every model backend."""
 
 import json
+from collections.abc import Mapping
+from typing import NamedTuple
 
 from app.schemas import CategorizeRow
+
+
+class Example(NamedTuple):
+    """Something this user categorized before, shown next to a similar row."""
+
+    text: str
+    category: str
+
+
+# Row id -> its examples. Rows without an entry are asked as before.
+Examples = Mapping[str, list[Example]]
+
+EXAMPLES_NOTE = """Some rows carry past_choices: similar things this user categorized before.
+Where a past choice is the same kind of thing as the row, follow the user's habit, even
+if you would have picked another category. Ignore past choices that are not really similar."""
 
 SYSTEM = """You sort credit-card statement rows into the user's own expense categories.
 
@@ -19,19 +36,28 @@ Etsy, Temu, Vinted) give no clue about the item. A wrong category costs the user
 one, so answer null whenever you would be guessing."""
 
 
-def user_message(rows: list[CategorizeRow], categories: list[str]) -> str:
+def user_message(
+    rows: list[CategorizeRow], categories: list[str], examples: Examples | None = None
+) -> str:
+    shown = {r.id: examples[r.id] for r in rows if examples and examples.get(r.id)}
     listing = [
         {
             "id": r.id,
             "text": r.text,
             "amount": f"{r.amount_cents / 100:.2f}",
             **({"bank_category": r.bank_category} if r.bank_category else {}),
+            **(
+                {"past_choices": [{"text": e.text, "category": e.category} for e in shown[r.id]]}
+                if r.id in shown
+                else {}
+            ),
         }
         for r in rows
     ]
     return (
         "The user's categories:\n"
         + "\n".join(f"- {c}" for c in categories)
+        + (f"\n\n{EXAMPLES_NOTE}" if shown else "")
         + "\n\nRows:\n"
         + json.dumps(listing, indent=1)
         + "\n\nAnswer for every row, by id."

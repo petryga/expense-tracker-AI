@@ -6,7 +6,7 @@ from typing import Literal
 
 import anthropic
 
-from app.prompt import SYSTEM, answer_schema, user_message
+from app.prompt import SYSTEM, Examples, answer_schema, user_message
 from app.schemas import CategorizeRow
 
 
@@ -22,6 +22,7 @@ def ask(
     timeout_s: float,
     effort: Literal["low", "medium", "high"] = "low",
     client: anthropic.Anthropic | None = None,
+    examples: Examples | None = None,
 ) -> tuple[object, dict[str, int]]:
     """Returns the parsed JSON answer and token counts. Raises on any failure;
     the caller turns failures into "no suggestion"."""
@@ -37,7 +38,7 @@ def ask(
             # Only the user's categories or null can come back.
             "format": {"type": "json_schema", "schema": answer_schema(categories)},
         },
-        messages=[{"role": "user", "content": user_message(rows, categories)}],
+        messages=[{"role": "user", "content": user_message(rows, categories, examples)}],
     )
     if response.stop_reason != "end_turn":
         # A refusal or a cut-off answer is not something to read suggestions from.

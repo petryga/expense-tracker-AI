@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 from app.backends import claude, ollama
 from app.config import Settings, get_settings
+from app.prompt import Examples
 from app.schemas import CategorizeRow, Suggestion
 
 log = logging.getLogger("ai")
@@ -66,22 +67,36 @@ def _read_answers(
 
 
 def categorize_with_report(
-    rows: list[CategorizeRow], categories: list[str], settings: Settings | None = None
+    rows: list[CategorizeRow],
+    categories: list[str],
+    settings: Settings | None = None,
+    examples: Examples | None = None,
 ) -> tuple[list[Suggestion], Report]:
+    """`examples` are the user's past choices for similar rows, keyed by row id."""
     settings = settings or get_settings()
     report = Report()
     if not rows or not categories or settings.ai_backend == "none":
         return _none(rows), report
 
-    suggestions: list[Suggestion] = []
-    for start in range(0, len(rows), CHUNK_ROWS):
-        chunk = rows[start : start + CHUNK_ROWS]
-        suggestions += _ask_chunk(chunk, categories, settings, report)
-    return suggestions, report
+    # Rows shown past choices are asked apart from the rest, so the prompt
+    # for the others is exactly what it is without retrieval.
+    shown = [r for r in rows if examples and examples.get(r.id)]
+    plain = [r for r in rows if not (examples and examples.get(r.id))]
+    by_id: dict[str, Suggestion] = {}
+    for group, group_examples in ((plain, None), (shown, examples)):
+        for start in range(0, len(group), CHUNK_ROWS):
+            chunk = group[start : start + CHUNK_ROWS]
+            for suggestion in _ask_chunk(chunk, categories, settings, report, group_examples):
+                by_id[suggestion.id] = suggestion
+    return [by_id[r.id] for r in rows], report
 
 
 def _ask_chunk(
-    rows: list[CategorizeRow], categories: list[str], settings: Settings, report: Report
+    rows: list[CategorizeRow],
+    categories: list[str],
+    settings: Settings,
+    report: Report,
+    examples: Examples | None,
 ) -> list[Suggestion]:
     """One model call. A failed call costs only its own rows."""
     started = time.perf_counter()
@@ -95,10 +110,16 @@ def _ask_chunk(
                 categories,
                 settings.ai_timeout_s,
                 settings.ai_effort,
+                examples=examples,
             )
         else:
             answer, tokens = ollama.ask(
-                settings.ollama_url, settings.ai_model, rows, categories, settings.ai_timeout_s
+                settings.ollama_url,
+                settings.ai_model,
+                rows,
+                categories,
+                settings.ai_timeout_s,
+                examples,
             )
     except Exception as error:  # Timeout, connection, HTTP, cut-off or bad JSON (decision 11).
         report.failed_calls += 1

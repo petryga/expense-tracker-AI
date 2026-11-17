@@ -2,6 +2,7 @@
 
 from app.categorizer import Report, categorize_with_report
 from app.config import Settings
+from app.prompt import Examples
 from app.schemas import CategorizeRow
 from eval.baselines import Predictor, memory_map
 from eval.dataset import LabelledRow
@@ -20,12 +21,16 @@ def to_categorize_rows(rows: list[LabelledRow]) -> list[CategorizeRow]:
     ]
 
 
-def model_predictor(settings: Settings, categories: list[str], totals: Report) -> Predictor:
+def model_predictor(
+    settings: Settings, categories: list[str], totals: Report, examples: Examples | None = None
+) -> Predictor:
     """The model alone, one call per test month. Adds each call's cost and
-    failures into `totals`."""
+    failures into `totals`. `examples` are past choices to show, by row id."""
 
     def predict(_history: list[LabelledRow], rows: list[LabelledRow]) -> list[str | None]:
-        suggestions, report = categorize_with_report(to_categorize_rows(rows), categories, settings)
+        suggestions, report = categorize_with_report(
+            to_categorize_rows(rows), categories, settings, examples
+        )
         for name in ("calls", "failed_calls", "invalid_answers", "input_tokens", "output_tokens"):
             setattr(totals, name, getattr(totals, name) + getattr(report, name))
         totals.seconds += report.seconds

@@ -6,12 +6,17 @@ Uses only the standard library, so the service needs no extra dependency for it.
 import json
 import urllib.request
 
-from app.prompt import SYSTEM, answer_schema, user_message
+from app.prompt import SYSTEM, Examples, answer_schema, user_message
 from app.schemas import CategorizeRow
 
 
 def ask(
-    url: str, model: str, rows: list[CategorizeRow], categories: list[str], timeout_s: float
+    url: str,
+    model: str,
+    rows: list[CategorizeRow],
+    categories: list[str],
+    timeout_s: float,
+    examples: Examples | None = None,
 ) -> tuple[object, dict[str, int]]:
     """Returns the parsed JSON answer and token counts. Raises on any failure;
     the caller turns failures into "no suggestion"."""
@@ -25,7 +30,7 @@ def ask(
         "options": {"temperature": 0},
         "messages": [
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": user_message(rows, categories)},
+            {"role": "user", "content": user_message(rows, categories, examples)},
         ],
     }
     request = urllib.request.Request(

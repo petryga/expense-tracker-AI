@@ -1,6 +1,7 @@
 import io
 
-from eval.items import load_item_labels, most_common_label
+from eval.dataset import LabelledRow
+from eval.items import by_month, load_item_labels, most_common_label
 
 ITEMS = """id,date,text,amount,label
 item-1,2026-03-04,Test Garden Hose Nozzle,12.50,Garden
@@ -24,3 +25,17 @@ def test_most_common_label_baseline() -> None:
     rows = load_item_labels(io.StringIO(ITEMS))
     assert most_common_label(rows) == ["Garden", "Garden", "Garden"]
     assert most_common_label([]) == []
+
+
+def test_by_month_asks_one_month_per_call_and_keeps_the_order() -> None:
+    rows = load_item_labels(io.StringIO(ITEMS))
+    calls: list[list[str]] = []
+
+    def predict(_history: list[LabelledRow], asked: list[LabelledRow]) -> list[str | None]:
+        calls.append([r.reference for r in asked])
+        return [r.reference.upper() for r in asked]
+
+    assert by_month(rows[::-1], predict) == ["ITEM-3", "ITEM-2", "ITEM-1"]
+    # Never two months in one call: that would put an item's label in the
+    # same prompt as the item (as another item's past choice).
+    assert calls == [["item-2", "item-1"], ["item-3"]]

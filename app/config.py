@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     # Short, so a slow model never holds an import up for long (decision 11).
     ai_timeout_s: float = 120.0
 
+    # Retrieval of past choices (Phase C). Empty: no retrieval. A Postgres URL
+    # for a role that can only use the category_examples table.
+    ai_database_url: str = ""
+    # How many past choices an order item is shown. 0 turns retrieval off.
+    ai_examples_k: int = 3
+
     # Eval only: the card's account name in the app (see eval/prepare_labels.py).
     eval_card_account: str = ""
 

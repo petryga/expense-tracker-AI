@@ -71,7 +71,7 @@ def test_categorizer_uses_claude_and_turns_failure_into_no_suggestion(
 ) -> None:
     seen: list[str] = []
 
-    def ask(api_key: str, model: str, *_: Any) -> Any:
+    def ask(api_key: str, model: str, *_: Any, **__: Any) -> Any:
         seen.append(model)
         raise ValueError("stop_reason=refusal")
 
