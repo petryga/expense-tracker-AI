@@ -1,10 +1,18 @@
-"""The categorization prompt, shared by every model backend."""
+"""The categorization prompt, shared by every model backend.
+
+Frozen (PLANS.md, "A trustworthy accuracy number"): accuracy measured on rows
+imported after PROMPT_FROZEN_ON is held out, because the prompt was not tuned
+on them. Any change to the wording here starts a new freeze: set today's date,
+update the fingerprint in tests/test_prompt_freeze.py, and note it in README.
+"""
 
 import json
 from collections.abc import Mapping
 from typing import NamedTuple
 
 from app.schemas import CategorizeRow
+
+PROMPT_FROZEN_ON = "2026-11-17"
 
 
 class Example(NamedTuple):

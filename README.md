@@ -120,6 +120,16 @@ Every month from August 2025 on is a test month, answered using only the months 
 
 Merchant memory uses `eval/merchant.py` to normalize merchants (prefixes and store numbers stripped, first two words). It is reimplemented here for the eval; `BE/` uses the same rule in the app, and a test there checks the two agree.
 
+### Prompt freeze
+
+The categorization prompt (`app/prompt.py`: system prompt, examples note, row layout, answer schema) is **frozen as of 2026-11-17** (`PROMPT_FROZEN_ON`). The accuracy figures below come from the same rows the prompt was adjusted on, so they flatter it. Accuracy on rows imported after the freeze date is held out: the prompt never saw them while being written. `tests/test_prompt_freeze.py` fails on any change to the prompt, so a change can't slip in unnoticed; an intended change starts a new freeze date, and numbers from before it no longer describe the prompt.
+
+The held-out number comes from real use, not a labelled set: `BE/` records what was suggested for every purchase saved on review, and `npx tsx scripts/suggestion-report.ts` (in `BE/`) compares it with the category the expense has now, per month and per source (merchant memory or model), with a 95% range next to every percentage.
+
+| Freeze | Changes |
+|---|---|
+| 2026-11-17 | First freeze. |
+
 ### Results
 
 **Current (2026-11-15):** 206 non-Amazon card charges, January 2025 to November 2026. Test months 2025-08 on: 150 rows with a category, 45 can't tell. Every row is scored: the gift labels were relabelled with each item's real category once gifts became a checkbox in the app.
