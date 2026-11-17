@@ -141,6 +141,8 @@ The held-out number comes from real use, not a labelled set: `BE/` records what 
 | Memory, then bank-category mapping | 60.0% (90/150) | 78.3% (90/115) | 88.9% (40/45) |
 | **Memory, then Claude Haiku 5.5** | **76.0% (114/150)** | **91.2% (114/125)** | **97.8% (44/45)** |
 
+**Run to run (2026-11-17, three runs, same prompt and data):** memory then Haiku scored 113, 115 and 114 of 150 (75.3–76.7%, mean 76.0%), held back on 44–45 of 45 can't-tell rows, about $0.006 a run. Haiku alone varied more: 92, 87 and 88 (58.0–61.3%). The rules-only rows don't change between runs. So a single run of the main setup is good to about ±1 row; differences of a few rows between single runs, as in the older tables below, are within noise.
+
 Memory then Haiku: 15 calls, 41 s, $0.0058, 0 failed calls, 0 invalid answers. It beats the best rules-only row (memory, then bank-category mapping) by 16 points, with higher precision and fewer guesses on can't-tell rows. On 150 rows a single run is good to roughly plus or minus 7 points. The tables below are earlier runs, kept for the model and effort comparisons; each was measured on the label set of its day (143 rows with 7 gift rows left out), so compare within a table, not across.
 
 **Earlier, 143 rows (gift rows left out):**
