@@ -1,0 +1,5 @@
+# Only pyproject.toml and app/ go into the image. Real data never does.
+*
+!pyproject.toml
+!app/
+app/**/__pycache__
