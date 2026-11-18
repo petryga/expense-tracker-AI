@@ -18,6 +18,7 @@ A small FastAPI service that suggests a category for each card-statement row. Th
 - Requires the `X-AI-Secret` header to match `AI_SHARED_SECRET`. With the secret unset, every request is refused (503), so a misconfigured deploy fails closed.
 - `X-Request-Id` from `BE/` is kept and echoed back, and goes in the log line, so one import can be traced across both services.
 - Logs one line per request: method, path, status, duration, request id. Never bodies: they hold statement descriptions and amounts.
+- `/ask` adds one line per question with the same request id: the outcome, which tools were called, model calls, tokens and time. Never the question or the answer.
 - At most 500 rows and 300 categories per call; unknown fields are rejected. The service asks the model in chunks of 40 rows, so a long statement can't run past the model's output limit, and one failed chunk costs only its own rows.
 
 ## Spending assistant

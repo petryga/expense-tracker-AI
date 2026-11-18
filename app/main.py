@@ -44,6 +44,8 @@ async def request_id_and_log(
     they hold statement descriptions and amounts."""
     incoming = request.headers.get("x-request-id", "")
     request_id = incoming if REQUEST_ID.match(incoming) else str(uuid.uuid4())
+    # For handlers that log more than the request line (/ask).
+    request.state.request_id = request_id
     start = time.perf_counter()
     response = await call_next(request)
     response.headers["X-Request-Id"] = request_id
@@ -110,13 +112,14 @@ def _model(settings: Settings) -> Model:
 
 @app.post("/ask", dependencies=[Depends(require_shared_secret)])
 async def ask(
-    body: AskRequest, settings: Annotated[Settings, Depends(get_settings)]
+    body: AskRequest, request: Request, settings: Annotated[Settings, Depends(get_settings)]
 ) -> AskResponse:
     """The spending assistant: answers a question about the user's own data
     by calling the read-only tools of the Expense Tracker MCP server."""
     if settings.ai_backend != "claude" or not settings.anthropic_api_key:
         raise HTTPException(status_code=503, detail="the assistant is not configured")
     model_name = settings.ai_agent_model or settings.ai_model or "claude-haiku-5-5"
+    request_id = getattr(request.state, "request_id", "-")
     history = [Turn(t.role, t.text) for t in body.history]
     try:
         async with mcp_toolbox(
@@ -134,16 +137,18 @@ async def ask(
             )
     except Exception as error:
         # The MCP server could not start or broke off. Type only: no content in logs.
-        log.warning("assistant unavailable: %s", type(error).__name__)
+        log.warning("assistant unavailable: %s id=%s", type(error).__name__, request_id)
         raise HTTPException(status_code=503, detail="the assistant is unavailable") from None
-    # Counts and timing only; never the question or the answer.
+    # Counts and timing only; never the question or the answer. The request id
+    # ties it to the request line and to BE/'s line for the same question.
     log.info(
-        "ask outcome=%s tools=%s model_calls=%d tokens_in=%d tokens_out=%d %.1fs",
+        "ask outcome=%s tools=%s model_calls=%d tokens_in=%d tokens_out=%d %.1fs id=%s",
         result.outcome,
         ",".join(result.tool_calls) or "-",
         result.model_calls,
         result.input_tokens,
         result.output_tokens,
         result.seconds,
+        request_id,
     )
     return AskResponse(answer=result.answer, outcome=result.outcome, tool_calls=result.tool_calls)

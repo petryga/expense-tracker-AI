@@ -207,7 +207,7 @@ def test_ask_answers_and_never_logs_the_question(
                     "history": [{"role": "user", "text": "Hi"}],
                     "userToken": "tok-1",
                 },
-                headers=auth,
+                headers={**auth, "X-Request-Id": "req-ask-1"},
             )
     finally:
         app.dependency_overrides.clear()
@@ -221,11 +221,16 @@ def test_ask_answers_and_never_logs_the_question(
     assert seen["args"] == ["../MCP/dist/index.js"]
     assert seen["model"] == "claude-haiku-5-5"
     assert "Bean There" not in caplog.text
-    assert "outcome=answered" in caplog.text
+    # The outcome line carries the request id, so it can be found with the
+    # backend's line for the same question.
+    outcome_lines = [r.getMessage() for r in caplog.records if "outcome=" in r.getMessage()]
+    assert len(outcome_lines) == 1
+    assert "outcome=answered" in outcome_lines[0]
+    assert "id=req-ask-1" in outcome_lines[0]
 
 
 def test_ask_is_unavailable_when_the_mcp_server_fails(
-    auth: dict[str, str], monkeypatch: Any
+    auth: dict[str, str], monkeypatch: Any, caplog: Any
 ) -> None:
     from contextlib import asynccontextmanager
 
@@ -241,7 +246,13 @@ def test_ask_is_unavailable_when_the_mcp_server_fails(
         ai_shared_secret="test-secret", ai_backend="claude", anthropic_api_key="k"
     )
     try:
-        res = TestClient(app).post("/ask", json={"question": "Coffee?"}, headers=auth)
+        with caplog.at_level("INFO", logger="ai"):
+            res = TestClient(app).post(
+                "/ask",
+                json={"question": "Coffee?"},
+                headers={**auth, "X-Request-Id": "req-ask-2"},
+            )
     finally:
         app.dependency_overrides.clear()
     assert res.status_code == 503
+    assert "assistant unavailable: FileNotFoundError id=req-ask-2" in caplog.text
