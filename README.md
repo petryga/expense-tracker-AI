@@ -2,6 +2,8 @@
 
 A small FastAPI service that suggests a category for each card-statement row. The Expense Tracker's TypeScript API (`BE/`) calls it during statement import; the browser never does.
 
+**Part of the Expense Tracker:** [live demo](https://expense-tracker-fe-nu.vercel.app) · [MCP server](https://github.com/petryga/expense-tracker-mcp) · [backend](https://github.com/petryga/expense-tracker-BE) · [frontend](https://github.com/petryga/expense-tracker-FE)
+
 **One rule:** LLM work happens here, money stays in `BE/`. This service does no money math, has no user auth, and never decides anything on its own. `BE/` validates every answer and a person confirms every row.
 
 > Status: working. Backends: `none` (default, no suggestions), `ollama` (a local model) and `claude` (Claude Haiku 5.5 by default), chosen with `AI_BACKEND`. Eval results below.
@@ -23,7 +25,7 @@ A small FastAPI service that suggests a category for each card-statement row. Th
 
 ## Spending assistant
 
-`POST /ask` answers a question about the user's own spending. It is a tool-calling loop (`app/agent/`): Claude gets the question, the earlier turns and the read-only tools of the Expense Tracker MCP server (the `MCP/` repo), asks for tool calls, gets their results, and answers.
+`POST /ask` answers a question about the user's own spending. It is a tool-calling loop (`app/agent/`): Claude gets the question, the earlier turns and the read-only tools of the Expense Tracker MCP server ([expense-tracker-mcp](https://github.com/petryga/expense-tracker-mcp)), asks for tool calls, gets their results, and answers.
 
 - **Tools come from the MCP server**, started as a subprocess over stdio for each question with the asking user's token, so it can read only that user's data. Only tools the server marks read-only are offered; a call to anything else is refused here.
 - **Guardrails:** at most 6 model calls and 60 s per question, then a fixed message. A cut-off, refused or empty reply, or an API error, becomes "unavailable" rather than a half answer. Questions outside the data get "I can't answer that from your data."
